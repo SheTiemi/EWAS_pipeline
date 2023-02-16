@@ -44,8 +44,6 @@ meth %>% correct_dye_bias -> meth
 rm(corrected,with_bias)
 gc()
 
-meth = mask(meth,0.01)
-
 #Sex mismatches
 chrY = meth$manifest[chr=='Y',index]
 length(chrY)
@@ -72,6 +70,8 @@ pheno$predSex_conv[pheno$predSex=="f"]=2
 pheno$exclude[pheno$A1_SEX!=pheno$predSex_conv] = TRUE
 
 sum(pheno$exclude)
+
+meth = mask(meth,0.01)
 
 #create beta matrix
 beta = dont_normalize(meth)
