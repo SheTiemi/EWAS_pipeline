@@ -15,7 +15,7 @@ plotCtrl(rgSet,colnames(rgSet))
 #colnames indicates the order of the samples
 
 qc<-QCinfo(rgSet)
-save(rgSet,qc,pheno, file=paste("ENmix_qc_",date,".RData", sep=""))
+save(rgSet,qc, file=paste("ENmix_qc_",date,".RData", sep=""))
 
 #Data distribution plots
 mraw <- getmeth(rgSet)
@@ -80,6 +80,10 @@ beta_q1<-rcp(mdat_q1,qcscore=qc)
 #batch effect correction
 sva<-ctrlsva(rgSet)
 
-save(mdat,mdat_q1,beta_q1,sva, file=paste("ENmix_normalized_quantile1_",date,".RData", sep=""))
+pheno = pheno[colnames(beta_q1),]
+
+save(mdat,mdat_q1,beta_q1,sva,pheno, file=paste("ENmix_normalized_quantile1_",date,".RData", sep=""))
+
+write.csv(dir, "Enmix_pheno.csv",row.names=FALSE)
 
 system("rm -r RawData")
