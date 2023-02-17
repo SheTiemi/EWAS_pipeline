@@ -1,0 +1,203 @@
+#!/usr/bin/env Rscript --vanilla --slave
+######################################################################################################################
+
+# this is the beta version for the script to run quality control of arrays for DNA methylation using EWAStools:
+# https://github.com/hhhh5/ewastools
+# this script requieres that all the packages for EWAStools are installed
+######################################################################################################################
+
+# author: Sheila Tiemi Nagamatsu
+# day: 16 February 2023
+######################################################################################################################
+
+# this script uses the following inputs:
+#### Sheila revise !!!!
+# ????????????????????
+# ????????????????????
+# ????????????????????
+# Comment: I added the following options, Sheila please revise!!!!!!!
+#######################################################################################################################
+
+# setting parameters, this part of the script will received all the inputs and stablish all the outputs to be customized
+# by the user
+# this script uses the library optparse to add arguments to the script
+# adding arguments to the script
+library(optparse) 
+option_list=list(
+    make_option(c("--samplesheet"),
+                type="character",
+                default=NULL,
+                help="Path to a *csv file having the phenotype information and the paths to the idat files. In this samplesheet a column named Dir, is requiered pointing the path to the idat files", metavar="character"),
+    make_option(c("--out"),
+                type="character",
+                default="out.rds",
+                help="output file name for rds [default= %default]", metavar="character"),
+    make_option(c("--outname"),
+                type="character",
+                default=NULL,
+                help="name of the rds file after performing this analysis", metavar="character")
+);
+
+opt_parser=OptionParser(option_list=option_list);
+opt=parse_args(opt_parser);
+
+if (is.null(opt$file)){
+  print_help(opt_parser)
+  stop("At least one argument must be supplied (input file)", call.=FALSE)
+}
+
+######################## EWAStools ###############################
+paste0("Loading required libraries: ",Sys.time())
+# loading requiered libraries for EWAStools
+library(stringi)
+library(magrittr)
+library(data.table)
+library(svd)
+library(ewastools)
+library(purrr)
+
+#### Sheila revise !!!!
+# stablishing output prefix for all output files
+# outfile=paste0(opt$out,opt$outname,sep="")
+
+paste0("Reading phenofile: ",Sys.time())
+# reading phenofile
+# change to opt$samplesheet and pheno=read.csv(opt$samplesheet)
+pheno = read.csv("Manifest_dir_1302023_YalePenn_initialPhen.csv")
+# adding the SampleID to the rownames of the phenofile
+row.names(pheno) = pheno$SampleID
+
+paste0("Reading idat files: ",Sys.time())
+#create the methylation file
+#### Sheila revise !!!!
+# ????? is this create methylation file or object????
+meth = read_idats(pheno$Dir)
+
+
+pheno = as.data.table(pheno)
+pheno[,exclude:=FALSE]
+meth %>% control_metrics %>% sample_failure -> pheno$failed
+fails <- subset(pheno, failed == "TRUE")
+message("Failed Samples: ", nrow(fails))
+
+paste0("Estimating detection p-value: ",Sys.time())
+meth = ewastools::detectionP(meth)
+
+paste0("Checking dye-bias: ",Sys.time())
+# Check Dye-bias
+meth %>% dont_normalize                      -> with_bias
+meth %>% correct_dye_bias %>% dont_normalize -> corrected
+
+paste0("Get probes that detects SNPs in the arrays, probes with rs* codes included in the array: ",Sys.time())
+snps = meth$manifest[probe_type=="rs" & channel=="Both"]$index
+
+#### Sheila revise !!!!
+# ??????????? considered change to outfile stablished by the user
+# see the next example 
+# creating output name for figure
+# fig1_out=paste0(outfile,"_ewastools_density_bias_",".pdf",sep=""))
+# pdf(fig1_out)
+# after this the code to make the plot
+pdf(file=paste("Ewastools_density_bias_",date,".pdf",sep=""))
+plot(density(with_bias[snps,14],na.rm=TRUE,bw=0.1),col=1)
+lines(density(corrected[snps,14],na.rm=TRUE,bw=0.1),col=2)
+abline(v=0.5,lty=3)
+legend("topleft",col=1:2,legend=c("with_bias","corrected"),lwd=1)
+dev.off()
+
+# correcting die-bias and removing unnecesary objects
+meth %>% correct_dye_bias -> meth
+rm(corrected,with_bias)
+gc()
+
+
+# getting samples with sex mismatches, between sex registered in phenofile and the predicted in the array
+chrY = meth$manifest[chr=='Y',index]
+length(chrY)
+detP = meth$detP[chrY,]
+detP = colSums(detP<0.01,na.rm=TRUE)
+
+#### Sheila revise !!!!
+# ??????????? considered change to outfile stablished by the user
+# see the next example 
+# creating output name for figure
+# fig2_out=paste0(outfile,"_ewastools_sexchrom",".pdf",sep=""))
+# pdf(fig2_out)
+# after this the code to make the plot
+pdf(file=paste("Ewastools_SexChrom_",date,".pdf",sep=""))
+boxplot(split(detP,pheno$A1_SEX),ylab="# of detected Y chromosome probes")
+split(detP,pheno$A1_SEX) %>% sapply(median)
+dev.off()
+
+sexpred = check_sex(meth) 
+PredSex = predict_sex(sexpred$X, sexpred$Y)
+pheno$predSex_X = sexpred$X
+pheno$predSex_Y = sexpred$Y
+pheno$predSex = PredSex
+
+paste0(table(pheno$A1_SEX,pheno$predSex))
+
+pheno$predSex_conv[pheno$predSex=="m"]=1
+pheno$predSex_conv[pheno$predSex=="f"]=2
+pheno$exclude[pheno$A1_SEX!=pheno$predSex_conv] = TRUE
+
+#### Sheila revise !!!!
+# is this step necesary
+sum(pheno$exclude)
+
+#### Sheila revise !!!!
+# add description of this step, please
+meth = mask(meth,0.01)
+
+#create beta matrix
+beta = dont_normalize(meth)
+
+# -------------------------
+# SNP outliers
+snps = meth$manifest[probe_type=="rs"]$index
+genotypes = call_genotypes(beta[snps,],learn=FALSE)
+pheno$SNPoutlier = snp_outliers(genotypes)
+
+#### Sheila revise !!!!
+# ??????????? considered change to outfile stablished by the user
+# see the next example 
+# creating output name for figure
+# fig2_out=paste0(outfile,"ewastools_snp_outlier_all",".pdf",sep=""))
+# pdf(fig2_out)
+pdf(file=paste("Ewastools_snp_outlier_all_",date,".pdf",sep=""))
+stripchart(pheno$SNPoutlier,method="jitter",pch=4)
+abline(v=-4,lty="dotted",col=2)
+dev.off()
+
+#### Sheila revise !!!!
+# add description of this step, please
+pheno[pheno$SNPoutlier>=-4.0,.(SampleID,Sample.ID,Cohort)]
+
+#### Sheila revise !!!!
+# add description of this step, please
+pheno[SNPoutlier > -4,exclude:=TRUE]
+sum(pheno$exclude)
+
+# ------------------------
+#### Sheila revise !!!!
+# add description of this step, please
+# check for duplicates
+pheno$donor_id = enumerate_sample_donors(genotypes)
+
+#### Sheila revise !!!!
+# add description of this step, please
+pheno[,n:=.N,by=donor_id]
+pheno[n>1,.(SampleID,Sample.ID,Cohort,donor_id)]
+pheno[n>1,exclude:=TRUE]
+
+sum(pheno$exclude)
+
+pheno = pheno[exclude==FALSE,]
+dim(pheno)
+
+#### Sheila revise !!!!
+# writting output file
+# this script will save a updated phenofile or samplesheet in csv format, with the samples flagged as low quality by EWAStools
+# samplesheet_out=paste0(outfile,"EWastools_pheno.csv",sep=""))
+# write.csv(file=samplesheet_out, pheno, row.names=FALSE, quote=FALSE)
+write.csv(pheno, "EWastools_pheno.csv",row.names=FALSE)
