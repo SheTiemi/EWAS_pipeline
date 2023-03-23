@@ -84,6 +84,6 @@ pheno = pheno[colnames(beta_q1),]
 
 save(mdat,mdat_q1,beta_q1,sva,pheno, file=paste("ENmix_normalized_quantile1_",date,".RData", sep=""))
 
-write.csv(dir, "Enmix_pheno.csv",row.names=FALSE)
+write.csv(pheno, "Enmix_pheno.csv",row.names=FALSE)
 
 system("rm -r RawData")
